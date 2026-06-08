@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from availability_monitor.job import run_stored_monitor_pass
+from availability_monitor.job import (
+    get_effective_settings,
+    resolve_telegram_credentials,
+    run_stored_monitor_pass,
+)
 from availability_monitor.protocol import MonitorProvider, RunReport, SettingField, StorageHandle
 
 
@@ -49,6 +53,23 @@ class DummyProvider(MonitorProvider):
 
 
 class JobTests(unittest.TestCase):
+    def test_effective_settings_prefers_env_over_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            provider = DummyProvider()
+            os.environ["FOO"] = "from-env"
+            effective, _ = get_effective_settings(provider, data_dir)
+            self.assertEqual(effective["foo"], "from-env")
+            del os.environ["FOO"]
+
+    def test_resolve_telegram_credentials_prefers_env(self) -> None:
+        token, chat = resolve_telegram_credentials(
+            {"telegram_bot_token": "db-token", "telegram_chat_id": "123"},
+            {"TELEGRAM_BOT_TOKEN": "env-token", "TELEGRAM_CHAT_ID": "-100123"},
+        )
+        self.assertEqual(token, "env-token")
+        self.assertEqual(chat, "-100123")
+
     def test_stored_pass_writes_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)

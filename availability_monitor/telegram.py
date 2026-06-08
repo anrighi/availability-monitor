@@ -7,6 +7,30 @@ from typing import Any
 import requests
 
 
+def normalize_chat_id(raw: str) -> str:
+    value = (raw or "").strip().strip('"').strip("'")
+    if not value:
+        return ""
+    if value.startswith("@"):
+        return value
+    if value.startswith("-") and value[1:].isdigit():
+        return value
+    if not value.isdigit():
+        return value
+    if value.startswith("100") and len(value) >= 13:
+        return f"-{value}"
+    if len(value) == 10:
+        return f"-100{value}"
+    return value
+
+
+def format_chat_id_for_api(chat_id: str) -> str | int:
+    normalized = normalize_chat_id(chat_id)
+    if normalized.lstrip("-").isdigit():
+        return int(normalized)
+    return normalized
+
+
 def send_plain(
     session: requests.Session,
     *,
@@ -17,7 +41,7 @@ def send_plain(
 ) -> tuple[bool, str]:
     api = f"https://api.telegram.org/bot{token}/sendMessage"
     payload: dict[str, Any] = {
-        "chat_id": chat_id,
+        "chat_id": format_chat_id_for_api(chat_id),
         "text": message,
         "disable_web_page_preview": True,
     }
@@ -83,7 +107,11 @@ def verify_telegram_channel(
         return False, "must start with @"
     api = f"https://api.telegram.org/bot{token}/getChat"
     try:
-        response = session.get(api, params={"chat_id": chat_id}, timeout=20)
+        response = session.get(
+            api,
+            params={"chat_id": format_chat_id_for_api(chat_id)},
+            timeout=20,
+        )
     except requests.RequestException as exc:
         return False, f"telegram: {exc}"
     try:

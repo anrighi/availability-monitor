@@ -17,7 +17,11 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
 from availability_monitor import storage, telegram
-from availability_monitor.job import run_stored_monitor_pass
+from availability_monitor.job import (
+    get_effective_settings,
+    resolve_telegram_credentials,
+    run_stored_monitor_pass,
+)
 from availability_monitor.protocol import MonitorProvider, StorageHandle
 
 
@@ -159,21 +163,16 @@ def create_app(provider: MonitorProvider) -> FastAPI:
         if not session_ok(request):
             return RedirectResponse("/login", status_code=302)
         db_file = get_db_file()
-        storage.ensure_defaults(
-            db_file,
-            default_settings=provider.default_settings(),
-            allowed_keys=provider.all_setting_keys(),
-        )
-        settings = storage.get_all_settings(db_file)
+        effective, _runtime_env = get_effective_settings(provider, app_data_dir)
         handle = StorageHandle(db_file=db_file)
         return templates.TemplateResponse(
             request,
             "dashboard.html",
             {
-                "settings": settings,
+                "settings": effective,
                 "setting_fields": provider.setting_fields(),
-                "masked_token": mask_secret(settings.get("telegram_bot_token", "")),
-                "masked_chat": mask_secret(settings.get("telegram_chat_id", "")),
+                "masked_token": mask_secret(effective.get("telegram_bot_token", "")),
+                "masked_chat": mask_secret(effective.get("telegram_chat_id", "")),
                 "executions": storage.list_executions(db_file, limit=50),
                 "state_item_count": len(storage.list_state_items(db_file)),
                 **provider.extra_dashboard_context(handle),
@@ -199,7 +198,9 @@ def create_app(provider: MonitorProvider) -> FastAPI:
         elif str(form.get("keep_telegram_token", "")) != "1":
             updates["telegram_bot_token"] = ""
 
-        new_chat = str(form.get("telegram_chat_id", "") or "").strip()
+        new_chat = telegram.normalize_chat_id(
+            str(form.get("telegram_chat_id", "") or "")
+        )
         if new_chat:
             updates["telegram_chat_id"] = new_chat
         elif str(form.get("keep_telegram_chat", "")) != "1":
@@ -219,12 +220,13 @@ def create_app(provider: MonitorProvider) -> FastAPI:
     @app.post("/api/telegram/test")
     async def api_telegram_test(request: Request) -> RedirectResponse:
         require_session(request)
-        db_file = get_db_file()
-        settings = storage.get_all_settings(db_file)
-        token = (settings.get("telegram_bot_token") or "").strip()
-        chat = (settings.get("telegram_chat_id") or "").strip()
+        effective, runtime_env = get_effective_settings(provider, app_data_dir)
+        token, chat = resolve_telegram_credentials(effective, runtime_env)
         if not token or not chat:
-            raise HTTPException(400, "Telegram token and chat id must be configured")
+            raise HTTPException(
+                400,
+                "Telegram token and chat id must be configured in .env or Web UI",
+            )
         session = requests.Session()
         session.trust_env = False
         ok, err = telegram.send_plain(
@@ -234,7 +236,14 @@ def create_app(provider: MonitorProvider) -> FastAPI:
             message=provider.telegram_test_message(),
         )
         if not ok:
-            raise HTTPException(502, err[:2000])
+            hint = ""
+            if "chat not found" in err.lower():
+                hint = (
+                    " Add the bot to the group, send a message there, and use the "
+                    "supergroup id (e.g. -1001234567890). IDs copied without a "
+                    "leading minus are fixed automatically when they start with 100."
+                )
+            raise HTTPException(502, (err + hint)[:2000])
         return RedirectResponse("/?telegram_test=ok", status_code=303)
 
     @app.post("/api/run-now")
@@ -251,7 +260,10 @@ def create_app(provider: MonitorProvider) -> FastAPI:
                 trust_proxy_env=False,
             )
 
-        result = await run_in_threadpool(job)
+        try:
+            result = await run_in_threadpool(job)
+        except Exception as exc:
+            raise HTTPException(500, f"Run failed: {exc}") from exc
         exit_code = int(result.get("exit_code", 1))
         return RedirectResponse(f"/?run_exit={exit_code}", status_code=303)
 

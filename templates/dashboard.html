@@ -42,6 +42,7 @@
 
 <section class="card">
   <h2>Settings</h2>
+  <p>Values from <span class="mono">.env</span> / container environment override empty database fields. Saving here writes to the database.</p>
   <form method="post" action="/api/settings">
     {% for field in setting_fields %}
       <label for="{{ field.key }}">{{ field.label }}</label>
@@ -62,7 +63,8 @@
 
     <label for="telegram_chat_id">Telegram chat id</label>
     <p class="mono">Stored: {{ masked_chat or "(empty)" }}</p>
-    <input id="telegram_chat_id" name="telegram_chat_id" type="text" autocomplete="off" placeholder="chat id or @channel">
+    <p>Group/supergroup: <span class="mono">-1001234567890</span> (add the bot to the group first). Channel: <span class="mono">@channel</span>.</p>
+    <input id="telegram_chat_id" name="telegram_chat_id" type="text" autocomplete="off" placeholder="-1001234567890 or @channel">
     <input type="hidden" name="keep_telegram_chat" value="1">
 
     <button type="submit">Save settings</button>
