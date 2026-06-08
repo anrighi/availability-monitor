@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY pyproject.toml README.md LICENSE ./
+COPY availability_monitor ./availability_monitor
+COPY templates ./templates
+COPY static ./static
+
+RUN pip install --no-cache-dir .
+
+ENV APP_DATA_DIR=/data \
+    POLL_INTERVAL_SECONDS=900
+
+RUN mkdir -p /data

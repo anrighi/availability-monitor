@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ provider_title }}{% endblock %}
+{% block body %}
+<header>
+  <h1>{{ provider_title }}</h1>
+  <div class="row">
+    <a class="button secondary" href="/logout">Sign out</a>
+  </div>
+</header>
+
+{% if request.query_params.get("run_exit") is not none %}
+  {% set code = request.query_params.get("run_exit") %}
+  <div class="notice {% if code == "0" %}ok{% else %}err{% endif %}">
+    Manual run finished with exit code <span class="mono">{{ code }}</span>.
+  </div>
+{% endif %}
+
+{% if request.query_params.get("telegram_test") == "ok" %}
+  <div class="notice ok">Telegram test message sent.</div>
+{% endif %}
+
+{% if request.query_params.get("settings") == "ok" %}
+  <div class="notice ok">Settings saved.</div>
+{% endif %}
+
+{% if request.query_params.get("state_cleared") == "ok" %}
+  <div class="notice ok">Diff state cleared ({{ state_item_count }} items removed).</div>
+{% endif %}
+
+{% set settings_err = request.query_params.get("settings_error") %}
+{% if settings_err %}
+  <div class="notice err">Settings error: <span class="mono">{{ settings_err }}</span></div>
+{% endif %}
+
+<section class="card">
+  <h2>Run monitor now</h2>
+  <p>Runs the same pass as the background poller and writes a row to <span class="mono">executions</span>.</p>
+  <form method="post" action="/api/run-now">
+    <button type="submit">Run now</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Settings</h2>
+  <form method="post" action="/api/settings">
+    {% for field in setting_fields %}
+      <label for="{{ field.key }}">{{ field.label }}</label>
+      {% if field.help_text %}
+        <p>{{ field.help_text }}</p>
+      {% endif %}
+      {% if field.field_type == "textarea" %}
+        <textarea id="{{ field.key }}" name="{{ field.key }}" class="mono" placeholder="{{ field.placeholder }}">{{ settings.get(field.key, '') }}</textarea>
+      {% else %}
+        <input id="{{ field.key }}" name="{{ field.key }}" type="{{ field.field_type }}" value="{{ settings.get(field.key, '') }}" placeholder="{{ field.placeholder }}" {% if field.required %}required{% endif %}>
+      {% endif %}
+    {% endfor %}
+
+    <label for="telegram_bot_token">Telegram bot token</label>
+    <p class="mono">Stored: {{ masked_token or "(empty)" }}</p>
+    <input id="telegram_bot_token" name="telegram_bot_token" type="password" autocomplete="off" placeholder="Leave blank to keep unchanged">
+    <input type="hidden" name="keep_telegram_token" value="1">
+
+    <label for="telegram_chat_id">Telegram chat id</label>
+    <p class="mono">Stored: {{ masked_chat or "(empty)" }}</p>
+    <input id="telegram_chat_id" name="telegram_chat_id" type="text" autocomplete="off" placeholder="chat id or @channel">
+    <input type="hidden" name="keep_telegram_chat" value="1">
+
+    <button type="submit">Save settings</button>
+  </form>
+
+  <form method="post" action="/api/telegram/test" style="margin-top:1rem">
+    <button type="submit">Send Telegram test message</button>
+  </form>
+</section>
+
+{% block extra_sections %}{% endblock %}
+
+<section class="card">
+  <h2>Diff state</h2>
+  <p>Tracked seen items: <strong>{{ state_item_count }}</strong></p>
+  <form method="post" action="/api/clear-state">
+    <button class="secondary" type="submit">Clear seen state</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Executions</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Id</th>
+        <th>Started</th>
+        <th>Finished</th>
+        <th>Exit</th>
+        <th>Summary</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in executions %}
+        <tr>
+          <td class="mono">{{ e.id }}</td>
+          <td class="mono">{{ format_ts(e.started_at) }}</td>
+          <td class="mono">{{ format_ts(e.finished_at) if e.finished_at else "" }}</td>
+          <td class="mono">{{ e.exit_code if e.exit_code is not none else "" }}</td>
+          <td><pre class="mono" style="margin:0;white-space:pre-wrap">{{ e.summary | pretty_json }}</pre></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

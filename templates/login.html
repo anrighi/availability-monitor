@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Login · {{ provider_title }}{% endblock %}
+{% block body %}
+<header>
+  <h1>{{ provider_title }}</h1>
+</header>
+
+<div class="card">
+  {% if not auth_configured %}
+    <p class="error">The server is missing <span class="mono">WEB_UI_PASSWORD</span>. Set it in Docker Compose and restart the web container.</p>
+  {% else %}
+    <form method="post" action="/login">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      {% if error %}
+        <p class="error">{{ error }}</p>
+      {% endif %}
+      <button type="submit">Sign in</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}
